@@ -1,0 +1,40 @@
+# TelePlay Backend
+
+# Telegram MTProto Client
+pyrotgfork>=2.2.24
+TgCrypto>=1.2.5
+
+# Web Framework
+fastapi>=0.138.0
+uvicorn[standard]>=0.49.0
+
+# Database
+sqlalchemy>=2.0.51
+asyncpg>=0.31.0
+aiosqlite>=0.22.1
+alembic>=1.18.4
+
+# Validation
+pydantic>=2.13.4
+pydantic-settings>=2.14.2
+
+# Authentication
+python-jose[cryptography]>=3.5.0
+bcrypt>=5.0.0
+
+# Utilities
+python-multipart>=0.0.32
+aiofiles>=25.1.0
+Pillow>=12.0.0
+
+# Rate Limiting
+slowapi>=0.1.10
+
+# Optional Redis cache/rate-limit support (safe to leave REDIS_URL empty)
+redis>=8.0.1
+
+# Managed Google Drive media cache
+httpx>=0.28.1
+
+# Authenticated encrypted Google Drive cache
+cryptography>=46.0.0

@@ -1,0 +1,31 @@
+name = "teleplay-media-edge"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# Domain-free setup: keep this true and use the generated *.workers.dev URL.
+workers_dev = true
+
+[vars]
+RENDER_ORIGIN = "https://your-teleplay.onrender.com"
+ALLOWED_ORIGINS = "https://your-frontend.example.com"
+EDGE_CHUNK_SIZE_BYTES = "4194304"
+EDGE_TOUCH_INTERVAL_SECONDS = "21600"
+
+# Never put secret values in this file. The included GitHub workflow provisions
+# missing bindings during first deployment from GitHub Actions secrets.
+[secrets]
+required = ["EDGE_SIGNING_SECRET", "ORIGIN_SECRET", "TOUCH_SECRET"]
+
+# Clean custom-domain setup (recommended for PUBLIC_STREAM_EDGE_MODE=redirect):
+# 1. Set workers_dev = false above.
+# 2. Replace the hostname below with a subdomain in a Cloudflare-managed zone.
+# 3. Remove any existing DNS record with the same hostname.
+# 4. Uncomment this block.
+# [[routes]]
+# pattern = "l1-media.example.com"
+# custom_domain = true
+
+# Same-public-URL proxy mode instead uses a Worker Route on the API hostname:
+# [[routes]]
+# pattern = "api.example.com/api/stream/s/*"
+# zone_name = "example.com"

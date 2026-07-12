@@ -1,0 +1,46 @@
+.env
+env.txt
+*.env
+!.env.example
+backend/.env
+web/.env
+android/local.properties
+android/*.jks
+android/app/*.jks
+__pycache__/
+*.py[cod]
+node_modules/
+dist/
+build/
+.gradle/
+.idea/
+.DS_Store
+stable.txt
+changelog.txt
+TelePlay.7z
+TelePlay-stable.7z
+# Generated card thumbnails (original images are never retained)
+backend/data/thumbnails/
+cloudflare-worker/wrangler.toml
+.dev.vars
+cloudflare-worker/.worker-secrets.json
+cloudflare-worker/.worker-existing-secrets.json
+cloudflare-worker/.worker-inspect.err
+# Local dependency lock files intentionally not committed
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+pnpm-lock.yaml
+bun.lock
+bun.lockb
+# Local tooling caches
+.pytest_cache/
+.wrangler/
+.cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# Production cache test reports
+teleplay-cache-test-*.json
+teleplay-cache-reconcile-*.json

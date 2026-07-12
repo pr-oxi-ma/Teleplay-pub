@@ -1,0 +1,141 @@
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches:
+      - vercel
+    paths:
+      - "cloudflare-worker/**"
+      - ".github/workflows/cloudflare-worker-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: teleplay-cloudflare-worker-production
+  cancel-in-progress: true
+
+jobs:
+  test-and-deploy:
+    name: Test and deploy media edge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Worker dependencies
+        working-directory: cloudflare-worker
+        run: npm install --no-audit --no-fund --no-package-lock
+
+      - name: Validate Worker syntax
+        working-directory: cloudflare-worker
+        run: npm run check
+
+      - name: Run Worker tests
+        working-directory: cloudflare-worker
+        run: npm test
+
+      - name: Validate production Worker bundle
+        working-directory: cloudflare-worker
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/teleplay-worker-dry-run
+          npx wrangler deploy \
+            --config wrangler.production.toml \
+            --dry-run \
+            --outdir /tmp/teleplay-worker-dry-run
+
+      - name: Validate Cloudflare API token
+        working-directory: cloudflare-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_API_TOKEN}" ]]; then
+            echo "::error::Missing GitHub Actions secret: CLOUDFLARE_API_TOKEN"
+            exit 1
+          fi
+          npx wrangler whoami
+
+      - name: Detect existing Worker and required secrets
+        id: worker-state
+        working-directory: cloudflare-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -f .worker-existing-secrets.json .worker-inspect.err
+
+          if npx wrangler secret list \
+            --config wrangler.production.toml \
+            --format json \
+            > .worker-existing-secrets.json \
+            2> .worker-inspect.err; then
+
+            missing="$(node scripts/inspect-secret-bindings.mjs \
+              .worker-existing-secrets.json \
+              EDGE_SIGNING_SECRET \
+              ORIGIN_SECRET \
+              TOUCH_SECRET)"
+
+            if [[ -z "${missing}" ]]; then
+              echo "bootstrap=false" >> "${GITHUB_OUTPUT}"
+              echo "missing=" >> "${GITHUB_OUTPUT}"
+              echo "Existing Worker detected with all required secret bindings."
+              echo "Deploying with CLOUDFLARE_API_TOKEN only; current secret values stay untouched."
+            else
+              echo "bootstrap=true" >> "${GITHUB_OUTPUT}"
+              echo "missing=${missing}" >> "${GITHUB_OUTPUT}"
+              echo "Existing Worker is missing required bindings: ${missing}"
+            fi
+          else
+            echo "bootstrap=true" >> "${GITHUB_OUTPUT}"
+            echo "missing=EDGE_SIGNING_SECRET,ORIGIN_SECRET,TOUCH_SECRET" >> "${GITHUB_OUTPUT}"
+            echo "No existing Worker was detected. Treating this as first-time bootstrap."
+          fi
+
+      - name: Build bootstrap Worker secrets file
+        if: steps.worker-state.outputs.bootstrap == 'true'
+        working-directory: cloudflare-worker
+        env:
+          EDGE_SIGNING_SECRET: ${{ secrets.EDGE_SIGNING_SECRET }}
+          ORIGIN_SECRET: ${{ secrets.ORIGIN_SECRET }}
+          TOUCH_SECRET: ${{ secrets.TOUCH_SECRET }}
+          REQUIRED_SECRET_NAMES: ${{ steps.worker-state.outputs.missing }}
+        run: |
+          set -euo pipefail
+          node scripts/write-bootstrap-secrets.mjs \
+            .worker-secrets.json \
+            "${REQUIRED_SECRET_NAMES}"
+
+      - name: Deploy Worker
+        working-directory: cloudflare-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NEEDS_BOOTSTRAP: ${{ steps.worker-state.outputs.bootstrap }}
+        run: |
+          set -euo pipefail
+          if [[ "${NEEDS_BOOTSTRAP}" == "true" ]]; then
+            npx wrangler deploy \
+              --config wrangler.production.toml \
+              --secrets-file .worker-secrets.json
+          else
+            npx wrangler deploy --config wrangler.production.toml
+          fi
+
+      - name: Remove temporary Worker files
+        if: always()
+        working-directory: cloudflare-worker
+        run: |
+          rm -f \
+            .worker-secrets.json \
+            .worker-existing-secrets.json \
+            .worker-inspect.err

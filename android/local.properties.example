@@ -1,0 +1,17 @@
+# Copy this to local.properties and configure
+# Android SDK location (required)
+sdk.dir=C:\Users\YOUR_USERNAME\AppData\Local\Android\Sdk
+
+# Env variables win, local.properties is second, code fallback is last.
+# New preferred name:
+TELEPLAY_ANDROID_SERVER_URL=http://your-server-ip:8000
+TELEPLAY_ANDROID_BOT_USERNAME=YourBotUsername
+
+# Backward compatible server URL name also works:
+# TELEGRAM_TV_SERVER_URL=http://your-server-ip:8000
+
+# Release signing values can also be provided as environment variables.
+# RELEASE_STORE_FILE=../my-release-key.jks
+# RELEASE_STORE_PASSWORD=
+# RELEASE_KEY_ALIAS=my-key-alias
+# RELEASE_KEY_PASSWORD=

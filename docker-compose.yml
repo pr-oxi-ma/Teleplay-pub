@@ -1,0 +1,196 @@
+# =========================================
+# TelePlay - Docker Compose
+# =========================================
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in your values
+#   2. Run: docker-compose up -d
+#
+# Services:
+#   - db: PostgreSQL database
+#   - backend: FastAPI + Telegram Bot
+#   - web: React web interface (nginx)
+#
+# =========================================
+
+services:
+  # -----------------------------------------
+  # PostgreSQL Database
+  # -----------------------------------------
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-telegram_tv}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - telegram-tv-network
+
+  # -----------------------------------------
+  # Backend API + Telegram Bot
+  # -----------------------------------------
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-telegram_tv}
+
+      # Redis cache is optional. Leave REDIS_URL empty to run without it.
+      # For local compose Redis without password: REDIS_URL=redis://redis:6379/0
+      # With REDIS_PASSWORD set: REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_URL: ${REDIS_URL:-}
+      REDIS_CACHE_STREAM_CHUNKS: ${REDIS_CACHE_STREAM_CHUNKS:-true}
+      REDIS_STREAM_CHUNK_CACHE_CHUNKS: ${REDIS_STREAM_CHUNK_CACHE_CHUNKS:-2}
+      REDIS_STREAM_CHUNK_TTL_SECONDS: ${REDIS_STREAM_CHUNK_TTL_SECONDS:-300}
+      REDIS_PREFETCH_ENABLED: ${REDIS_PREFETCH_ENABLED:-true}
+      REDIS_PREFETCH_CHUNK_COUNT: ${REDIS_PREFETCH_CHUNK_COUNT:-2}
+
+      # Production hybrid media cache (optional)
+      CACHE_MODE: ${CACHE_MODE:-off}
+      MEDIA_CACHE_KEY_VERSION: ${MEDIA_CACHE_KEY_VERSION:-2}
+      GOOGLE_DRIVE_CLIENT_ID: ${GOOGLE_DRIVE_CLIENT_ID:-}
+      GOOGLE_DRIVE_CLIENT_SECRET: ${GOOGLE_DRIVE_CLIENT_SECRET:-}
+      GOOGLE_DRIVE_REFRESH_TOKEN: ${GOOGLE_DRIVE_REFRESH_TOKEN:-}
+      GOOGLE_DRIVE_CACHE_FOLDER_ID: ${GOOGLE_DRIVE_CACHE_FOLDER_ID:-}
+      MEDIA_CACHE_MASTER_KEY_BASE64: ${MEDIA_CACHE_MASTER_KEY_BASE64:-}
+      GDRIVE_CACHE_BUDGET_GB: ${GDRIVE_CACHE_BUDGET_GB:-4000}
+      GDRIVE_MAX_CACHE_FILE_GB: ${GDRIVE_MAX_CACHE_FILE_GB:-5}
+      GDRIVE_DAILY_EGRESS_SOFT_LIMIT_GB: ${GDRIVE_DAILY_EGRESS_SOFT_LIMIT_GB:-800}
+      GDRIVE_HIGH_WATERMARK: ${GDRIVE_HIGH_WATERMARK:-0.80}
+      GDRIVE_LOW_WATERMARK: ${GDRIVE_LOW_WATERMARK:-0.65}
+      GDRIVE_NEVER_REUSED_TTL_DAYS: ${GDRIVE_NEVER_REUSED_TTL_DAYS:-3}
+      GDRIVE_COLD_TTL_DAYS: ${GDRIVE_COLD_TTL_DAYS:-30}
+      GDRIVE_EVICTION_GRACE_HOURS: ${GDRIVE_EVICTION_GRACE_HOURS:-6}
+      GDRIVE_CLEANUP_INTERVAL_SECONDS: ${GDRIVE_CLEANUP_INTERVAL_SECONDS:-21600}
+      GDRIVE_CLEANUP_START_DELAY_SECONDS: ${GDRIVE_CLEANUP_START_DELAY_SECONDS:-30}
+      GDRIVE_CLEANUP_BATCH_SIZE: ${GDRIVE_CLEANUP_BATCH_SIZE:-25}
+      GDRIVE_UPLOAD_CHUNK_MB: ${GDRIVE_UPLOAD_CHUNK_MB:-8}
+      GDRIVE_MAX_CONCURRENT_FILLS: ${GDRIVE_MAX_CONCURRENT_FILLS:-1}
+      GDRIVE_FILL_TELEGRAM_CONCURRENCY: ${GDRIVE_FILL_TELEGRAM_CONCURRENCY:-1}
+      GDRIVE_JOB_POLL_SECONDS: ${GDRIVE_JOB_POLL_SECONDS:-5}
+      GDRIVE_JOB_LEASE_SECONDS: ${GDRIVE_JOB_LEASE_SECONDS:-180}
+      GDRIVE_JOB_MAX_ATTEMPTS: ${GDRIVE_JOB_MAX_ATTEMPTS:-12}
+      GDRIVE_ACCESS_TOUCH_SECONDS: ${GDRIVE_ACCESS_TOUCH_SECONDS:-3600}
+      GDRIVE_READ_LEASE_SECONDS: ${GDRIVE_READ_LEASE_SECONDS:-900}
+      GDRIVE_READ_LEASE_RENEW_SECONDS: ${GDRIVE_READ_LEASE_RENEW_SECONDS:-120}
+      GDRIVE_ADMISSION_SMALL_FILE_MB: ${GDRIVE_ADMISSION_SMALL_FILE_MB:-25}
+      GDRIVE_ADMISSION_BYTES_MB: ${GDRIVE_ADMISSION_BYTES_MB:-128}
+      GDRIVE_ADMISSION_RATIO: ${GDRIVE_ADMISSION_RATIO:-0.20}
+      GDRIVE_CIRCUIT_FAILURE_THRESHOLD: ${GDRIVE_CIRCUIT_FAILURE_THRESHOLD:-3}
+      GDRIVE_CIRCUIT_OPEN_SECONDS: ${GDRIVE_CIRCUIT_OPEN_SECONDS:-120}
+      CLOUDFLARE_WORKER_BASE_URL: ${CLOUDFLARE_WORKER_BASE_URL:-}
+      CLOUDFLARE_EDGE_SIGNING_SECRET: ${CLOUDFLARE_EDGE_SIGNING_SECRET:-}
+      CLOUDFLARE_ORIGIN_SECRET: ${CLOUDFLARE_ORIGIN_SECRET:-}
+      CLOUDFLARE_TOUCH_SECRET: ${CLOUDFLARE_TOUCH_SECRET:-}
+      CLOUDFLARE_EDGE_URL_TTL_SECONDS: ${CLOUDFLARE_EDGE_URL_TTL_SECONDS:-7200}
+      CLOUDFLARE_EDGE_TOUCH_MAX_SKEW_SECONDS: ${CLOUDFLARE_EDGE_TOUCH_MAX_SKEW_SECONDS:-300}
+      PUBLIC_STREAM_EDGE_MODE: ${PUBLIC_STREAM_EDGE_MODE:-off}
+
+      # On-demand image thumbnail generation/cache
+      THUMBNAIL_CACHE_DIR: ${THUMBNAIL_CACHE_DIR:-/app/data/thumbnails}
+      THUMBNAIL_MAX_DIMENSION: ${THUMBNAIL_MAX_DIMENSION:-320}
+      THUMBNAIL_WEBP_QUALITY: ${THUMBNAIL_WEBP_QUALITY:-68}
+      THUMBNAIL_GENERATION_CONCURRENCY: ${THUMBNAIL_GENERATION_CONCURRENCY:-2}
+
+      # Telegram (from .env file)
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_HELPER_BOT_TOKENS: ${TELEGRAM_HELPER_BOT_TOKENS:-}
+      TELEGRAM_STORAGE_CHANNEL_ID: ${TELEGRAM_STORAGE_CHANNEL_ID}
+      TELEGRAM_CLIENT_CONCURRENCY: ${TELEGRAM_CLIENT_CONCURRENCY:-3}
+      AUTH_USERS: ${AUTH_USERS:-}
+      
+      # Security
+      # JWT_SECRET is required. Generate one with: openssl rand -hex 32
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-10080}
+      JWT_REFRESH_EXPIRY_DAYS: ${JWT_REFRESH_EXPIRY_DAYS:-90}
+
+      # Web / server configuration
+      WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost}
+      SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
+      SERVER_PORT: ${SERVER_PORT:-8000}
+      LOGIN_CODE_LENGTH: ${LOGIN_CODE_LENGTH:-6}
+      LOGIN_CODE_EXPIRY_MINUTES: ${LOGIN_CODE_EXPIRY_MINUTES:-5}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # Persist Telegram session without hiding the application code
+      - telegram_session:/app/session
+      # Persist only generated small WebP thumbnails (never original images)
+      - thumbnail_cache:/app/data/thumbnails
+    networks:
+      - telegram-tv-network
+
+
+  # -----------------------------------------
+  # Optional Redis Cache
+  # -----------------------------------------
+  # Disabled by default. To use locally:
+  #   1. Set REDIS_URL=redis://redis:6379/0 in .env
+  #   2. Optional: set REDIS_PASSWORD and use REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+  #   3. Run docker compose --profile redis up -d
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    profiles: ["redis"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-64mb}
+    command: >
+      sh -c 'exec redis-server
+      --save ""
+      --appendonly no
+      --maxmemory "$$REDIS_MAXMEMORY"
+      --maxmemory-policy allkeys-lru
+      $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}'
+    networks:
+      - telegram-tv-network
+
+  # -----------------------------------------
+  # Web Interface (React + Nginx)
+  # -----------------------------------------
+  web:
+    build: ./web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NGINX_PORT: ${NGINX_PORT:-8080}
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-localhost}
+      API_PROXY_PASS: ${API_PROXY_PASS:-http://backend:8000}
+    ports:
+      - "${WEB_PORT:-80}:8080"
+    networks:
+      - telegram-tv-network
+
+# -----------------------------------------
+# Volumes
+# -----------------------------------------
+volumes:
+  postgres_data:
+    driver: local
+  telegram_session:
+    driver: local
+  thumbnail_cache:
+    driver: local
+
+# -----------------------------------------
+# Networks
+# -----------------------------------------
+networks:
+  telegram-tv-network:
+    driver: bridge
